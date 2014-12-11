@@ -3,8 +3,9 @@
 extern crate "mdbm-sys" as mdbm_sys;
 extern crate libc;
 
-use std::slice;
+use std::io::IoError;
 use std::mem;
+use std::slice;
 
 pub struct MDBM {
     db: *mut mdbm_sys::MDBM,
@@ -12,18 +13,18 @@ pub struct MDBM {
 
 impl MDBM {
     /// Open a database.
-    pub fn new(file: &str) -> Result<MDBM, ()> {
+    pub fn new(file: &str) -> Result<MDBM, IoError> {
         unsafe {
             let file = file.to_c_str();
             let db = mdbm_sys::mdbm_open(
                 file.as_ptr(),
                 mdbm_sys::MDBM_O_RDWR | mdbm_sys::MDBM_O_CREAT,
-                0755,
+                0o644,
                 0,
                 0);
 
             if db.is_null() {
-                Err(())
+                Err(IoError::last_error())
             } else {
                 Ok(MDBM { db: db })
             }
@@ -35,7 +36,7 @@ impl MDBM {
         'a,
         K: AsDatum,
         V: AsDatum,
-    >(&self, key: K, value: V, flags: int) -> Result<(), ()> {
+    >(&self, key: K, value: V, flags: int) -> Result<(), IoError> {
         let k = key.as_datum();
         let v = value.as_datum();
 
@@ -46,10 +47,10 @@ impl MDBM {
                 v.datum,
                 flags as libc::c_int);
 
-            if rc == 0 {
-                Ok(())
+            if rc == -1 {
+                Err(IoError::last_error())
             } else {
-                Err(())
+                Ok(())
             }
         }
     }
@@ -59,7 +60,7 @@ impl MDBM {
         'a,
         'b,
         K: AsDatum,
-    >(&'a self, key: K, flags: int) -> Result<Entry<'a, 'b>, ()> {
+    >(&'a self, key: K, flags: int) -> Result<Entry<'a, 'b>, IoError> {
         let key = key.as_datum();
 
         unsafe {
@@ -71,7 +72,7 @@ impl MDBM {
             if rc == 1 {
                 Ok(Entry { db: self, key: key })
             } else {
-                Err(())
+                Err(IoError::last_error())
             }
         }
     }
@@ -80,6 +81,7 @@ impl MDBM {
 impl Drop for MDBM {
     fn drop(&mut self) {
         unsafe {
+            mdbm_sys::mdbm_sync(self.db);
             mdbm_sys::mdbm_close(self.db);
         }
     }
@@ -141,7 +143,7 @@ impl<'a, 'b> Drop for Entry<'a, 'b> {
     fn drop(&mut self) {
         unsafe {
             let rc = mdbm_sys::mdbm_unlock_smart(self.db.db, &self.key.datum, 0);
-            assert_eq!(rc, 0);
+            assert_eq!(rc, 1);
         }
     }
 }
@@ -158,7 +160,9 @@ mod tests {
 
         {
             let value = db.lock("hello", 0).unwrap();
-            println!("hello: {}", str::from_utf8(value.get().unwrap()));
+            let v = str::from_utf8(value.get().unwrap()).unwrap();
+            assert_eq!(v, "world");
+            println!("hello: {}", v);
         }
     }
 }
