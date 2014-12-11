@@ -148,13 +148,13 @@ impl<'a, 'b> Drop for Entry<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MDBM, Datum, Entry};
+    use super::MDBM;
     use std::str;
 
     #[test]
     fn test() {
         let db = MDBM::new("test.db").unwrap();
-        db.set("hello", "world", 0);
+        db.set("hello", "world", 0).unwrap();
 
         {
             let value = db.lock("hello", 0).unwrap();
