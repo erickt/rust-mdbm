@@ -59,7 +59,7 @@ impl MDBM {
         'a,
         'b,
         K: AsDatum,
-    >(&'a self, key: K, flags: int) -> Result<Entry<'a, 'b>, IoError> {
+    >(&'a self, key: &'b K, flags: int) -> Result<Entry<'a, 'b>, IoError> {
         let key = key.as_datum();
 
         unsafe {
