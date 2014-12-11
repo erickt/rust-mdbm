@@ -1,0 +1,8 @@
+[package]
+
+name = "rust-mdbm"
+version = "0.0.1"
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
+
+[dependencies.mdbm-sys]
+path = "mdbm-sys"
