@@ -33,7 +33,6 @@ impl MDBM {
 
     /// Set a key.
     pub fn set<
-        'a,
         K: AsDatum,
         V: AsDatum,
     >(&self, key: K, value: V, flags: int) -> Result<(), IoError> {
