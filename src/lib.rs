@@ -158,7 +158,7 @@ mod tests {
         db.set("hello", "world", 0).unwrap();
 
         {
-            let value = db.lock("hello", 0).unwrap();
+            let value = db.lock(&"hello", 0).unwrap();
             let v = str::from_utf8(value.get().unwrap()).unwrap();
             assert_eq!(v, "world");
             println!("hello: {}", v);
