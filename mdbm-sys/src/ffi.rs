@@ -639,6 +639,7 @@ pub type mdbm_hash_t =
                               (arg1: *const uint8_t, arg2: ::libc::c_int)>;
 pub type mdbm_hashval_t = uint32_t;
 #[link(name = "mdbm")]
+#[link(name = "stdc++")]
 extern "C" {
     pub static mut tzname: *mut *mut ::libc::c_char;
     pub static mut getdate_err: ::libc::c_int;
@@ -652,6 +653,7 @@ extern "C" {
     pub static mut mdbm_hash_funcs: *mut mdbm_hash_t;
 }
 #[link(name = "mdbm")]
+#[link(name = "stdc++")]
 extern "C" {
     pub fn open(arg1: *const ::libc::c_char, arg2: ::libc::c_int, ...)
      -> ::libc::c_int;
