@@ -32,16 +32,15 @@ impl MDBM {
     }
 
     /// Set a key.
-    pub fn set<
-        'a,
-        K: AsDatum<'a> + 'a,
-        V: AsDatum<'a> + 'a,
-    >(&self, key: K, value: V, flags: int) -> Result<(), IoError> {
+    pub fn set<K, V>(&self, key: &K, value: &V, flags: int) -> Result<(), IoError> where
+        K: AsDatum,
+        V: AsDatum,
+    {
         unsafe {
             let rc = mdbm_sys::mdbm_store(
                 self.db,
-                key.as_datum().to_raw_datum(),
-                value.as_datum().to_raw_datum(),
+                to_raw_datum(key.as_datum()),
+                to_raw_datum(value.as_datum()),
                 flags as libc::c_int);
 
             if rc == -1 {
@@ -53,23 +52,20 @@ impl MDBM {
     }
 
     /// Lock a key.
-    pub fn lock<
-        'a,
-        'b,
-        K: AsDatum<'b> + 'b,
-    >(&'a self, key: K, flags: int) -> Result<Entry<'a, 'b>, IoError> {
-        let key = key.as_datum();
-        unsafe {
-            let rc = mdbm_sys::mdbm_lock_smart(
+    pub fn lock<'a, K>(&'a self, key: &'a K, flags: int) -> Result<Lock<'a>, IoError> where
+        K: AsDatum,
+    {
+        let rc = unsafe {
+            mdbm_sys::mdbm_lock_smart(
                 self.db,
-                &key.to_raw_datum(),
-                flags as libc::c_int);
+                &to_raw_datum(key.as_datum()),
+                flags as libc::c_int)
+        };
 
-            if rc == 1 {
-                Ok(Entry { db: self, key: key })
-            } else {
-                Err(IoError::last_error())
-            }
+        if rc == 1 {
+            Ok(Lock { db: self, key: key.as_datum() })
+        } else {
+            Err(IoError::last_error())
         }
     }
 }
@@ -88,52 +84,56 @@ pub struct Datum<'a> {
 }
 
 impl<'a> Datum<'a> {
-    pub fn new(bytes: &[u8]) -> Datum {
+    pub fn new<'a>(bytes: &'a [u8]) -> Datum<'a> {
         Datum { bytes: bytes }
     }
+}
 
-    fn to_raw_datum(&self) -> mdbm_sys::datum {
-        mdbm_sys::datum {
-            dptr: self.bytes.as_ptr() as *mut _,
-            dsize: self.bytes.len() as libc::c_int,
-        }
+pub trait AsDatum for Sized? {
+    fn as_datum<'a>(&'a self) -> Datum<'a>;
+}
+
+impl<'a, Sized? T: AsDatum> AsDatum for &'a T {
+    fn as_datum<'a>(&'a self) -> Datum<'a> { (**self).as_datum() }
+}
+
+impl AsDatum for [u8] {
+    fn as_datum<'a>(&'a self) -> Datum<'a> {
+        Datum::new(self)
     }
 }
 
-pub trait AsDatum<'a> {
-    fn as_datum(&self) -> Datum<'a>;
-}
-
-impl<'a> AsDatum<'a> for &'a [u8] {
-    fn as_datum(&self) -> Datum<'a> {
-        Datum::new(*self)
+impl AsDatum for str {
+    fn as_datum<'a>(&'a self) -> Datum<'a> {
+        self.as_bytes().as_datum()
     }
 }
 
-impl<'a> AsDatum<'a> for &'a str {
-    fn as_datum(&self) -> Datum<'a> {
-        Datum::new(self.as_bytes())
+fn to_raw_datum(datum: Datum) -> mdbm_sys::datum {
+    mdbm_sys::datum {
+        dptr: datum.bytes.as_ptr() as *mut _,
+        dsize: datum.bytes.len() as libc::c_int,
     }
 }
 
-pub struct Entry<'a, 'b> {
+pub struct Lock<'a> {
     db: &'a MDBM,
-    key: Datum<'b>,
+    key: Datum<'a>,
 }
 
-impl<'a, 'b> Entry<'a, 'b> {
+impl<'a> Lock<'a> {
     /// Fetch a key.
-    pub fn get<'c>(&'c self) -> Option<&'c [u8]> {
+    pub fn get(&self) -> Option<&[u8]> {
         unsafe {
             let value = mdbm_sys::mdbm_fetch(
                 self.db.db,
-                self.key.to_raw_datum());
+                to_raw_datum(self.key));
 
             if value.dptr.is_null() {
                 None
             } else {
                 // we want to constrain the ptr to our lifetime.
-                let ptr: &'c *const u8 = mem::transmute(&value.dptr);
+                let ptr: &*const u8 = mem::transmute(&value.dptr);
                 Some(slice::from_raw_buf(ptr, value.dsize as uint))
             }
         }
@@ -141,12 +141,13 @@ impl<'a, 'b> Entry<'a, 'b> {
 }
 
 #[unsafe_destructor]
-impl<'a, 'b> Drop for Entry<'a, 'b> {
+impl<'a> Drop for Lock<'a> {
     fn drop(&mut self) {
+        println!("unlock1");
         unsafe {
             let rc = mdbm_sys::mdbm_unlock_smart(
                 self.db.db,
-                &self.key.to_raw_datum(),
+                &to_raw_datum(self.key),
                 0);
 
             assert_eq!(rc, 1);
@@ -162,13 +163,21 @@ mod tests {
     #[test]
     fn test() {
         let db = MDBM::new("test.db").unwrap();
-        db.set("hello", "world", 0).unwrap();
+        db.set(&"hello", &"world", 0).unwrap();
 
         {
-            let value = db.lock("hello", 0).unwrap();
-            let v = str::from_utf8(value.get().unwrap()).unwrap();
-            assert_eq!(v, "world");
-            println!("hello: {}", v);
+            // key needs to be an lvalue so the lock can hold a reference to
+            // it.
+            let key = "hello";
+
+            // Lock the key. RIAA will unlock it when we exit this scope.
+            let value = db.lock(&key, 0).unwrap();
+
+            // Convert the value into a string. The lock is still live at this
+            // point.
+            let value = str::from_utf8(value.get().unwrap()).unwrap();
+            assert_eq!(value, "world");
+            println!("hello: {}", value);
         }
     }
 
@@ -177,29 +186,31 @@ mod tests {
     #[test]
     fn test2() {
         let db = MDBM::new("test.db").unwrap();
-        db.set("hello", "world", 0).unwrap();
+        db.set(&"hello", &"world", 0).unwrap();
 
         {
             let value = {
-                let x = vec![1];
-                db.lock(x.as_slice(), 0).unwrap()
+                let key = vec![1];
+                db.lock(&key.as_slice(), 0).unwrap()
             };
-            let v = str::from_utf8(value.get().unwrap()).unwrap();
-            assert_eq!(v, "world");
-            println!("hello: {}", v);
+
+            let value = str::from_utf8(value.get().unwrap()).unwrap();
+            assert_eq!(value, "world");
+            println!("hello: {}", value);
         }
     }
     */
 
-    // values can't escape
     /*
+    // values can't escape
     #[test]
     fn test3() {
         let _ = {
             let db = MDBM::new("test.db").unwrap();
-            db.set("hello", "world", 0).unwrap();
+            db.set(&"hello", &"world", 0).unwrap();
 
-            let value = db.lock("hello", 0).unwrap();
+            let key = "hello";
+            let value = db.lock(&key, 0).unwrap();
             str::from_utf8(value.get().unwrap()).unwrap()
         };
     }
