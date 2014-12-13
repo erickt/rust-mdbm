@@ -52,8 +52,8 @@ impl MDBM {
         unsafe {
             let rc = mdbm_sys::mdbm_store(
                 self.db,
-                to_raw_datum(key.as_datum()),
-                to_raw_datum(value.as_datum()),
+                to_raw_datum(&key.as_datum()),
+                to_raw_datum(&value.as_datum()),
                 flags as libc::c_int);
 
             if rc == -1 {
@@ -71,7 +71,7 @@ impl MDBM {
         let rc = unsafe {
             mdbm_sys::mdbm_lock_smart(
                 self.db,
-                &to_raw_datum(key.as_datum()),
+                &to_raw_datum(&key.as_datum()),
                 flags as libc::c_int)
         };
 
@@ -122,7 +122,7 @@ impl AsDatum for str {
     }
 }
 
-fn to_raw_datum(datum: Datum) -> mdbm_sys::datum {
+fn to_raw_datum(datum: &Datum) -> mdbm_sys::datum {
     mdbm_sys::datum {
         dptr: datum.bytes.as_ptr() as *mut _,
         dsize: datum.bytes.len() as libc::c_int,
@@ -136,11 +136,11 @@ pub struct Lock<'a> {
 
 impl<'a> Lock<'a> {
     /// Fetch a key.
-    pub fn get(&self) -> Option<&[u8]> {
+    pub fn get<'a>(&'a self) -> Option<&'a [u8]> {
         unsafe {
             let value = mdbm_sys::mdbm_fetch(
                 self.db.db,
-                to_raw_datum(self.key));
+                to_raw_datum(&self.key));
 
             if value.dptr.is_null() {
                 None
@@ -156,11 +156,10 @@ impl<'a> Lock<'a> {
 #[unsafe_destructor]
 impl<'a> Drop for Lock<'a> {
     fn drop(&mut self) {
-        println!("unlock1");
         unsafe {
             let rc = mdbm_sys::mdbm_unlock_smart(
                 self.db.db,
-                &to_raw_datum(self.key),
+                &to_raw_datum(&self.key),
                 0);
 
             assert_eq!(rc, 1);
@@ -201,10 +200,9 @@ mod tests {
         }
     }
 
-    // keys can't escape
     /*
     #[test]
-    fn test2() {
+    fn test_keys_cannot_escape() {
         let db = MDBM::new(
             &Path::new("test.db"),
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
@@ -215,23 +213,37 @@ mod tests {
 
         db.set(&"hello", &"world", 0).unwrap();
 
-        {
-            let value = {
-                let key = vec![1];
-                db.lock(&key.as_slice(), 0).unwrap()
-            };
-
-            let value = str::from_utf8(value.get().unwrap()).unwrap();
-            assert_eq!(value, "world");
-            println!("hello: {}", value);
-        }
+        let _ = {
+            let key = vec![1];
+            db.lock(&key.as_slice(), 0).unwrap()
+        };
     }
     */
 
     /*
-    // values can't escape
     #[test]
-    fn test3() {
+    fn test_values_cannot_escape() {
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
+        let _ = {
+            db.set(&"hello", &"world", 0).unwrap();
+
+            let key = "hello";
+            let value = db.lock(&key, 0).unwrap();
+            str::from_utf8(value.get().unwrap()).unwrap()
+        };
+    }
+    */
+
+    /*
+    #[test]
+    fn test_values_cannot_escape_database() {
         let _ = {
             let db = MDBM::new(
                 &Path::new("test.db"),
@@ -244,7 +256,7 @@ mod tests {
             db.set(&"hello", &"world", 0).unwrap();
 
             let key = "hello";
-            let value = db.lock(&key, 0).unwrap();
+            db.lock(&key, 0).unwrap();
             str::from_utf8(value.get().unwrap()).unwrap()
         };
     }
