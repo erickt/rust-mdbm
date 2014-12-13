@@ -13,7 +13,7 @@ pub struct MDBM {
 
 impl MDBM {
     /// Open a database.
-    pub fn new(file: &str) -> Result<MDBM, IoError> {
+    pub fn new(file: &Path) -> Result<MDBM, IoError> {
         unsafe {
             let file = file.to_c_str();
             let db = mdbm_sys::mdbm_open(
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let db = MDBM::new("test.db").unwrap();
+        let db = MDBM::new(&Path::new("test.db")).unwrap();
         db.set(&"hello", &"world", 0).unwrap();
 
         {
@@ -185,7 +185,7 @@ mod tests {
     /*
     #[test]
     fn test2() {
-        let db = MDBM::new("test.db").unwrap();
+        let db = MDBM::new(&Path::new("test.db")).unwrap();
         db.set(&"hello", &"world", 0).unwrap();
 
         {
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn test3() {
         let _ = {
-            let db = MDBM::new("test.db").unwrap();
+            let db = MDBM::new(&Path::new("test.db")).unwrap();
             db.set(&"hello", &"world", 0).unwrap();
 
             let key = "hello";
