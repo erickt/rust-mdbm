@@ -7,21 +7,34 @@ use std::io::IoError;
 use std::mem;
 use std::slice;
 
+pub const MDBM_O_RDONLY: uint = mdbm_sys::MDBM_O_RDONLY as uint;
+pub const MDBM_O_WRONLY: uint = mdbm_sys::MDBM_O_WRONLY as uint;
+pub const MDBM_O_RDWR: uint = mdbm_sys::MDBM_O_RDWR as uint;
+pub const MDBM_O_CREAT: uint = mdbm_sys::MDBM_O_CREAT as uint;
+pub const MDBM_O_TRUNC: uint = mdbm_sys::MDBM_O_TRUNC as uint;
+pub const MDBM_O_ASYNC: uint = mdbm_sys::MDBM_O_ASYNC as uint;
+
 pub struct MDBM {
     db: *mut mdbm_sys::MDBM,
 }
 
 impl MDBM {
     /// Open a database.
-    pub fn new(file: &Path) -> Result<MDBM, IoError> {
+    pub fn new(
+        path: &Path,
+        flags: uint,
+        mode: uint,
+        psize: uint,
+        presize: uint
+    ) -> Result<MDBM, IoError> {
         unsafe {
-            let file = file.to_c_str();
+            let path = path.to_c_str();
             let db = mdbm_sys::mdbm_open(
-                file.as_ptr(),
-                mdbm_sys::MDBM_O_RDWR | mdbm_sys::MDBM_O_CREAT,
-                0o644,
-                0,
-                0);
+                path.as_ptr(),
+                flags as libc::c_int,
+                mode as libc::c_int,
+                psize as libc::c_int,
+                presize as libc::c_int);
 
             if db.is_null() {
                 Err(IoError::last_error())
@@ -162,7 +175,14 @@ mod tests {
 
     #[test]
     fn test() {
-        let db = MDBM::new(&Path::new("test.db")).unwrap();
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
         db.set(&"hello", &"world", 0).unwrap();
 
         {
@@ -185,7 +205,14 @@ mod tests {
     /*
     #[test]
     fn test2() {
-        let db = MDBM::new(&Path::new("test.db")).unwrap();
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
         db.set(&"hello", &"world", 0).unwrap();
 
         {
@@ -206,7 +233,14 @@ mod tests {
     #[test]
     fn test3() {
         let _ = {
-            let db = MDBM::new(&Path::new("test.db")).unwrap();
+            let db = MDBM::new(
+                &Path::new("test.db"),
+                super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+                0o644,
+                0,
+                0
+            ).unwrap();
+
             db.set(&"hello", &"world", 0).unwrap();
 
             let key = "hello";
