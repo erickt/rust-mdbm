@@ -169,11 +169,13 @@ impl<'a> Drop for Lock<'a> {
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::MDBM;
     use std::str;
 
     #[test]
-    fn test() {
+    fn test_set_get() {
         let db = MDBM::new(
             &Path::new("test.db"),
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
@@ -261,4 +263,56 @@ mod tests {
         };
     }
     */
+
+    #[bench]
+    fn bench_set(b: &mut test::Bencher) {
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
+        b.iter(|| {
+            db.set(&"hello", &"world", 0).unwrap();
+        })
+    }
+
+    #[bench]
+    fn bench_get(b: &mut test::Bencher) {
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
+        db.set(&"hello", &"world", 0).unwrap();
+
+        b.iter(|| {
+            let key = "hello";
+            let value = db.lock(&key, 0).unwrap();
+            let _ = value.get().unwrap();
+        })
+    }
+
+    #[bench]
+    fn bench_set_get(b: &mut test::Bencher) {
+        let db = MDBM::new(
+            &Path::new("test.db"),
+            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
+            0o644,
+            0,
+            0
+        ).unwrap();
+
+        b.iter(|| {
+            db.set(&"hello", &"world", 0).unwrap();
+            let key = "hello";
+            let value = db.lock(&key, 0).unwrap();
+            let _ = value.get().unwrap();
+        })
+    }
 }
