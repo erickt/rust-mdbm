@@ -267,7 +267,7 @@ mod tests {
     #[bench]
     fn bench_set(b: &mut test::Bencher) {
         let db = MDBM::new(
-            &Path::new("test.db"),
+            &Path::new("test_bench_set.db"),
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
             0o644,
             0,
@@ -282,7 +282,7 @@ mod tests {
     #[bench]
     fn bench_get(b: &mut test::Bencher) {
         let db = MDBM::new(
-            &Path::new("test.db"),
+            &Path::new("test_bench_get.db"),
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
             0o644,
             0,
@@ -301,7 +301,7 @@ mod tests {
     #[bench]
     fn bench_set_get(b: &mut test::Bencher) {
         let db = MDBM::new(
-            &Path::new("test.db"),
+            &Path::new("test_bench_get_set.db"),
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
             0o644,
             0,
