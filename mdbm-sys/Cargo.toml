@@ -4,5 +4,5 @@ name = "mdbm-sys"
 version = "0.0.1"
 authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
 license = "MIT/Apache-2.0"
-description = "Low-level bindings to the zeromq library"
+description = "Low-level bindings to the mdbm library"
 repository = "https://github.com/erickt/rust-mdbm"
