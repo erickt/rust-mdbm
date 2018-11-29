@@ -28,8 +28,20 @@ impl MDBM {
         psize: usize,
         presize: usize,
     ) -> Result<MDBM, io::Error> {
-        let path_bytes = path.into().into_os_string().into_vec();
-        let path_cstring = std::ffi::CString::new(path_bytes)?;
+        // Rust Path objects are not null-terminated.
+        // To null-terminate it, we need to:
+
+        // 1. Take ownership of it, so we can modify the underlying buf.
+        //   - This may or may not copy, depending on what was passed in.
+        let path_buf = path.into();
+        // 2. Treat the string as a Unix string (i.e. assume Unix utf8 encoding)
+        //   - This should be a no-op
+        let path_bytes = path_buf.into_os_string();
+        // 3. Treat it as a vector of bytes
+        //   - This should be a no-op
+        let path_vec: Vec<u8> = path_bytes.into_vec();
+        // 4. Append a null byte
+        let path_cstring = std::ffi::CString::new(path_vec)?;
 
         unsafe {
             let db = mdbm_sys::mdbm_open(
