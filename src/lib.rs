@@ -50,8 +50,8 @@ impl MDBM {
     /// Set a key.
     pub fn set<'k, 'v, K, V>(&self, key: &'k K, value: &'v V, flags: isize) -> Result<(), io::Error>
     where
-        K: AsDatum<'k>,
-        V: AsDatum<'v>,
+        K: AsDatum<'k> + ?Sized,
+        V: AsDatum<'v> + ?Sized,
     {
         unsafe {
             let rc = mdbm_sys::mdbm_store(
@@ -72,7 +72,7 @@ impl MDBM {
     /// Lock a key.
     pub fn lock<'a, K>(&'a self, key: &'a K, flags: isize) -> Result<Lock<'a>, io::Error>
     where
-        K: AsDatum<'a>,
+        K: AsDatum<'a> + ?Sized,
     {
         let rc = unsafe {
             mdbm_sys::mdbm_lock_smart(
@@ -116,7 +116,7 @@ pub trait AsDatum<'a> {
     fn as_datum(&'a self) -> Datum<'a>;
 }
 
-impl<'a, T: AsDatum<'a>> AsDatum<'a> for &'a T {
+impl<'a, T: AsDatum<'a> + ?Sized> AsDatum<'a> for &'a T {
     fn as_datum(&'a self) -> Datum<'a> {
         (**self).as_datum()
     }
@@ -191,7 +191,7 @@ mod tests {
             0,
         ).unwrap();
 
-        db.set("hello", "world", 0).unwrap();
+        db.set(&"hello", &"world", 0).unwrap();
 
         {
             // key needs to be an lvalue so the lock can hold a reference to
@@ -199,7 +199,7 @@ mod tests {
             let key = "hello";
 
             // Lock the key. RIAA will unlock it when we exit this scope.
-            let value = db.lock(key, 0).unwrap();
+            let value = db.lock(&key, 0).unwrap();
 
             // Convert the value into a string. The lock is still live at this
             // point.
