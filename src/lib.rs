@@ -5,8 +5,7 @@ extern crate test;
 
 use std::io;
 use std::mem;
-use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use std::os::unix::ffi::OsStringExt;
 use std::slice;
 
 pub const MDBM_O_RDONLY: usize = mdbm_sys::MDBM_O_RDONLY as usize;
@@ -22,28 +21,30 @@ pub struct MDBM {
 
 impl MDBM {
     /// Open a database.
-    pub fn new(
-        path: &Path,
+    pub fn new<P: Into<std::path::PathBuf>>(
+        path: P,
         flags: usize,
         mode: usize,
         psize: usize,
         presize: usize,
     ) -> Result<MDBM, io::Error> {
-        unsafe {
-            let path = path.as_os_str();
+        let path_bytes = path.into().into_os_string().into_vec();
+        let path_cstring = std::ffi::CString::new(path_bytes)?;
+
+        unsafe{
             let db = mdbm_sys::mdbm_open(
-                mem::transmute::<*const u8, *const i8>(path.as_bytes().as_ptr()),
+                path_cstring.into_raw(),
                 flags as libc::c_int,
                 mode as libc::c_int,
                 psize as libc::c_int,
                 presize as libc::c_int,
             );
-
-            if db.is_null() {
-                Err(io::Error::last_os_error())
-            } else {
-                Ok(MDBM { db: db })
-            }
+        
+        if db.is_null() {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(MDBM { db: db })
+        }
         }
     }
 
