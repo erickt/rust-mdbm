@@ -31,7 +31,7 @@ impl MDBM {
         let path_bytes = path.into().into_os_string().into_vec();
         let path_cstring = std::ffi::CString::new(path_bytes)?;
 
-        unsafe{
+        unsafe {
             let db = mdbm_sys::mdbm_open(
                 path_cstring.into_raw(),
                 flags as libc::c_int,
@@ -39,12 +39,12 @@ impl MDBM {
                 psize as libc::c_int,
                 presize as libc::c_int,
             );
-        
-        if db.is_null() {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(MDBM { db: db })
-        }
+
+            if db.is_null() {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(MDBM { db: db })
+            }
         }
     }
 
@@ -190,7 +190,8 @@ mod tests {
             0o644,
             0,
             0,
-        ).unwrap();
+        )
+        .unwrap();
 
         db.set(&"hello", &"world", 0).unwrap();
 
@@ -280,7 +281,8 @@ mod tests {
             0o644,
             0,
             0,
-        ).unwrap();
+        )
+        .unwrap();
 
         b.iter(|| {
             db.set(&"hello", &"world", 0).unwrap();
@@ -295,7 +297,8 @@ mod tests {
             0o644,
             0,
             0,
-        ).unwrap();
+        )
+        .unwrap();
 
         db.set(&"hello", &"world", 0).unwrap();
 
@@ -314,7 +317,8 @@ mod tests {
             0o644,
             0,
             0,
-        ).unwrap();
+        )
+        .unwrap();
 
         b.iter(|| {
             db.set(&"hello", &"world", 0).unwrap();
