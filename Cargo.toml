@@ -8,4 +8,6 @@ description = "High-level bindings to the MDBM library"
 repository = "https://github.com/erickt/rust-mdbm"
 
 [dependencies]
-mdbm-sys = "*"
+mdbm-sys = { version = "*", path = "mdbm-sys" }
+libc = "0.2"
+
