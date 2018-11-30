@@ -186,19 +186,14 @@ impl<'a> Drop for Lock<'a> {
 #[cfg(test)]
 mod tests {
     use super::MDBM;
+    use std::fs::remove_file;
     use std::path::Path;
     use std::str;
 
     #[test]
     fn test_set_get() {
-        let db = MDBM::new(
-            &Path::new("test.db"),
-            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
-            0o644,
-            0,
-            0,
-        )
-        .unwrap();
+        let path = Path::new("test.db");
+        let db = MDBM::new(&path, super::MDBM_O_RDWR | super::MDBM_O_CREAT, 0o644, 0, 0).unwrap();
 
         db.set(&"hello", &"world", 0).unwrap();
 
@@ -216,7 +211,11 @@ mod tests {
             assert_eq!(value, "world");
             println!("hello: {}", value);
         }
+
+        let _ = remove_file(path);
     }
+
+    // Tests that should fail to compile
 
     /*
     #[test]
@@ -246,8 +245,9 @@ mod tests {
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
             0o644,
             0,
-            0
-        ).unwrap();
+            0,
+        )
+        .unwrap();
 
         let _ = {
             db.set(&"hello", &"world", 0).unwrap();
@@ -268,13 +268,14 @@ mod tests {
                 super::MDBM_O_RDWR | super::MDBM_O_CREAT,
                 0o644,
                 0,
-                0
-            ).unwrap();
+                0,
+            )
+            .unwrap();
 
             db.set(&"hello", &"world", 0).unwrap();
 
             let key = "hello";
-            db.lock(&key, 0).unwrap();
+            let value = db.lock(&key, 0).unwrap();
             str::from_utf8(value.get().unwrap()).unwrap()
         };
     }
