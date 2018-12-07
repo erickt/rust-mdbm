@@ -1,18 +1,16 @@
-#![feature(unsafe_destructor)]
-
-extern crate "mdbm-sys" as mdbm_sys;
 extern crate libc;
 
-use std::io::IoError;
+use std::io;
 use std::mem;
+use std::os::unix::ffi::OsStringExt;
 use std::slice;
 
-pub const MDBM_O_RDONLY: uint = mdbm_sys::MDBM_O_RDONLY as uint;
-pub const MDBM_O_WRONLY: uint = mdbm_sys::MDBM_O_WRONLY as uint;
-pub const MDBM_O_RDWR: uint = mdbm_sys::MDBM_O_RDWR as uint;
-pub const MDBM_O_CREAT: uint = mdbm_sys::MDBM_O_CREAT as uint;
-pub const MDBM_O_TRUNC: uint = mdbm_sys::MDBM_O_TRUNC as uint;
-pub const MDBM_O_ASYNC: uint = mdbm_sys::MDBM_O_ASYNC as uint;
+pub const MDBM_O_RDONLY: usize = mdbm_sys::MDBM_O_RDONLY as usize;
+pub const MDBM_O_WRONLY: usize = mdbm_sys::MDBM_O_WRONLY as usize;
+pub const MDBM_O_RDWR: usize = mdbm_sys::MDBM_O_RDWR as usize;
+pub const MDBM_O_CREAT: usize = mdbm_sys::MDBM_O_CREAT as usize;
+pub const MDBM_O_TRUNC: usize = mdbm_sys::MDBM_O_TRUNC as usize;
+pub const MDBM_O_ASYNC: usize = mdbm_sys::MDBM_O_ASYNC as usize;
 
 pub struct MDBM {
     db: *mut mdbm_sys::MDBM,
@@ -20,24 +18,39 @@ pub struct MDBM {
 
 impl MDBM {
     /// Open a database.
-    pub fn new(
-        path: &Path,
-        flags: uint,
-        mode: uint,
-        psize: uint,
-        presize: uint
-    ) -> Result<MDBM, IoError> {
+    pub fn new<P: Into<std::path::PathBuf>>(
+        path: P,
+        flags: usize,
+        mode: usize,
+        psize: usize,
+        presize: usize,
+    ) -> Result<MDBM, io::Error> {
+        // Rust Path objects are not null-terminated.
+        // To null-terminate it, we need to:
+
+        // 1. Take ownership of it, so we can modify the underlying buf.
+        //   - This may or may not copy, depending on what was passed in.
+        let path_buf = path.into();
+        // 2. Treat the string as a Unix string (i.e. assume Unix utf8 encoding)
+        //   - This should be a no-op
+        let path_bytes = path_buf.into_os_string();
+        // 3. Treat it as a vector of bytes
+        //   - This should be a no-op
+        let path_vec: Vec<u8> = path_bytes.into_vec();
+        // 4. Append a null byte
+        let path_cstring = std::ffi::CString::new(path_vec)?;
+
         unsafe {
-            let path = path.to_c_str();
             let db = mdbm_sys::mdbm_open(
-                path.as_ptr(),
+                path_cstring.into_raw(),
                 flags as libc::c_int,
                 mode as libc::c_int,
                 psize as libc::c_int,
-                presize as libc::c_int);
+                presize as libc::c_int,
+            );
 
             if db.is_null() {
-                Err(IoError::last_error())
+                Err(io::Error::last_os_error())
             } else {
                 Ok(MDBM { db: db })
             }
@@ -45,19 +58,21 @@ impl MDBM {
     }
 
     /// Set a key.
-    pub fn set<K, V>(&self, key: &K, value: &V, flags: int) -> Result<(), IoError> where
-        K: AsDatum,
-        V: AsDatum,
+    pub fn set<'k, 'v, K, V>(&self, key: &'k K, value: &'v V, flags: isize) -> Result<(), io::Error>
+    where
+        K: AsDatum<'k> + ?Sized,
+        V: AsDatum<'v> + ?Sized,
     {
         unsafe {
             let rc = mdbm_sys::mdbm_store(
                 self.db,
                 to_raw_datum(&key.as_datum()),
                 to_raw_datum(&value.as_datum()),
-                flags as libc::c_int);
+                flags as libc::c_int,
+            );
 
             if rc == -1 {
-                Err(IoError::last_error())
+                Err(io::Error::last_os_error())
             } else {
                 Ok(())
             }
@@ -65,20 +80,25 @@ impl MDBM {
     }
 
     /// Lock a key.
-    pub fn lock<'a, K>(&'a self, key: &'a K, flags: int) -> Result<Lock<'a>, IoError> where
-        K: AsDatum,
+    pub fn lock<'a, K>(&'a self, key: &'a K, flags: isize) -> Result<Lock<'a>, io::Error>
+    where
+        K: AsDatum<'a> + ?Sized,
     {
         let rc = unsafe {
             mdbm_sys::mdbm_lock_smart(
                 self.db,
                 &to_raw_datum(&key.as_datum()),
-                flags as libc::c_int)
+                flags as libc::c_int,
+            )
         };
 
         if rc == 1 {
-            Ok(Lock { db: self, key: key.as_datum() })
+            Ok(Lock {
+                db: self,
+                key: key.as_datum(),
+            })
         } else {
-            Err(IoError::last_error())
+            Err(io::Error::last_os_error())
         }
     }
 }
@@ -97,27 +117,29 @@ pub struct Datum<'a> {
 }
 
 impl<'a> Datum<'a> {
-    pub fn new<'a>(bytes: &'a [u8]) -> Datum<'a> {
+    pub fn new(bytes: &'a [u8]) -> Datum<'a> {
         Datum { bytes: bytes }
     }
 }
 
-pub trait AsDatum for Sized? {
-    fn as_datum<'a>(&'a self) -> Datum<'a>;
+pub trait AsDatum<'a> {
+    fn as_datum(&'a self) -> Datum<'a>;
 }
 
-impl<'a, Sized? T: AsDatum> AsDatum for &'a T {
-    fn as_datum<'a>(&'a self) -> Datum<'a> { (**self).as_datum() }
+impl<'a, T: AsDatum<'a> + ?Sized> AsDatum<'a> for &'a T {
+    fn as_datum(&'a self) -> Datum<'a> {
+        (**self).as_datum()
+    }
 }
 
-impl AsDatum for [u8] {
-    fn as_datum<'a>(&'a self) -> Datum<'a> {
+impl<'a> AsDatum<'a> for [u8] {
+    fn as_datum(&'a self) -> Datum<'a> {
         Datum::new(self)
     }
 }
 
-impl AsDatum for str {
-    fn as_datum<'a>(&'a self) -> Datum<'a> {
+impl<'a> AsDatum<'a> for str {
+    fn as_datum(&'a self) -> Datum<'a> {
         self.as_bytes().as_datum()
     }
 }
@@ -136,31 +158,25 @@ pub struct Lock<'a> {
 
 impl<'a> Lock<'a> {
     /// Fetch a key.
-    pub fn get<'a>(&'a self) -> Option<&'a [u8]> {
+    pub fn get(&'a self) -> Option<&'a [u8]> {
         unsafe {
-            let value = mdbm_sys::mdbm_fetch(
-                self.db.db,
-                to_raw_datum(&self.key));
+            let value = mdbm_sys::mdbm_fetch(self.db.db, to_raw_datum(&self.key));
 
             if value.dptr.is_null() {
                 None
             } else {
-                // we want to constrain the ptr to our lifetime.
-                let ptr: &*const u8 = mem::transmute(&value.dptr);
-                Some(slice::from_raw_buf(ptr, value.dsize as uint))
+                // Cast pointer from signed char (c) to unsigned char (rust)
+                let u8_ptr: *const u8 = mem::transmute::<*mut i8, *const u8>(value.dptr);
+                Some(slice::from_raw_parts(u8_ptr, value.dsize as usize))
             }
         }
     }
 }
 
-#[unsafe_destructor]
 impl<'a> Drop for Lock<'a> {
     fn drop(&mut self) {
         unsafe {
-            let rc = mdbm_sys::mdbm_unlock_smart(
-                self.db.db,
-                &to_raw_datum(&self.key),
-                0);
+            let rc = mdbm_sys::mdbm_unlock_smart(self.db.db, &to_raw_datum(&self.key), 0);
 
             assert_eq!(rc, 1);
         }
@@ -169,20 +185,15 @@ impl<'a> Drop for Lock<'a> {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::MDBM;
+    use std::fs::remove_file;
+    use std::path::Path;
     use std::str;
 
     #[test]
     fn test_set_get() {
-        let db = MDBM::new(
-            &Path::new("test.db"),
-            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
-            0o644,
-            0,
-            0
-        ).unwrap();
+        let path = Path::new("test.db");
+        let db = MDBM::new(&path, super::MDBM_O_RDWR | super::MDBM_O_CREAT, 0o644, 0, 0).unwrap();
 
         db.set(&"hello", &"world", 0).unwrap();
 
@@ -200,7 +211,11 @@ mod tests {
             assert_eq!(value, "world");
             println!("hello: {}", value);
         }
+
+        let _ = remove_file(path);
     }
+
+    // Tests that should fail to compile
 
     /*
     #[test]
@@ -230,8 +245,9 @@ mod tests {
             super::MDBM_O_RDWR | super::MDBM_O_CREAT,
             0o644,
             0,
-            0
-        ).unwrap();
+            0,
+        )
+        .unwrap();
 
         let _ = {
             db.set(&"hello", &"world", 0).unwrap();
@@ -252,67 +268,16 @@ mod tests {
                 super::MDBM_O_RDWR | super::MDBM_O_CREAT,
                 0o644,
                 0,
-                0
-            ).unwrap();
+                0,
+            )
+            .unwrap();
 
             db.set(&"hello", &"world", 0).unwrap();
 
             let key = "hello";
-            db.lock(&key, 0).unwrap();
+            let value = db.lock(&key, 0).unwrap();
             str::from_utf8(value.get().unwrap()).unwrap()
         };
     }
     */
-
-    #[bench]
-    fn bench_set(b: &mut test::Bencher) {
-        let db = MDBM::new(
-            &Path::new("test_bench_set.db"),
-            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
-            0o644,
-            0,
-            0
-        ).unwrap();
-
-        b.iter(|| {
-            db.set(&"hello", &"world", 0).unwrap();
-        })
-    }
-
-    #[bench]
-    fn bench_get(b: &mut test::Bencher) {
-        let db = MDBM::new(
-            &Path::new("test_bench_get.db"),
-            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
-            0o644,
-            0,
-            0
-        ).unwrap();
-
-        db.set(&"hello", &"world", 0).unwrap();
-
-        b.iter(|| {
-            let key = "hello";
-            let value = db.lock(&key, 0).unwrap();
-            let _ = value.get().unwrap();
-        })
-    }
-
-    #[bench]
-    fn bench_set_get(b: &mut test::Bencher) {
-        let db = MDBM::new(
-            &Path::new("test_bench_get_set.db"),
-            super::MDBM_O_RDWR | super::MDBM_O_CREAT,
-            0o644,
-            0,
-            0
-        ).unwrap();
-
-        b.iter(|| {
-            db.set(&"hello", &"world", 0).unwrap();
-            let key = "hello";
-            let value = db.lock(&key, 0).unwrap();
-            let _ = value.get().unwrap();
-        })
-    }
 }
